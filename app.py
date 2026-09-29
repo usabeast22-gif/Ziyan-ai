@@ -1,35 +1,105 @@
+import os
+import tempfile
 import streamlit as st
-from video.script import split_script
-from video.render import make_video
+from huggingface_hub import InferenceClient
 
-st.set_page_config(page_title="My AI Video Generator", page_icon="🎬", layout="wide")
+st.set_page_config(
+    page_title="My AI Video Generator",
+    page_icon="🎬",
+    layout="centered"
+)
+
 st.title("🎬 My AI Video Generator")
-st.caption("Script → scenes → video. Add your own model/API later for AI generation.")
+st.write("Script → AI Video")
 
-tab1, tab2 = st.tabs(["📝 Script → Video", "🖼️ Photo → Video"])
+if "HF_TOKEN" not in st.secrets:
+    st.error("HF_TOKEN Streamlit Secrets me add karo.")
+    st.stop()
 
-with tab1:
-    script = st.text_area("Enter your script", height=260,
-        placeholder="Scene 1: A little girl walks through a sunny garden...\nScene 2: She sees a butterfly...")
-    duration = st.slider("Target duration (minutes)", 1, 20, 1)
-    fps = st.selectbox("FPS", [24, 30], index=0)
-    if st.button("🎬 Create Video", type="primary"):
-        if not script.strip():
-            st.error("Please enter a script.")
-        else:
-            scenes = split_script(script, duration)
-            with st.spinner("Creating video..."):
-                output = make_video(scenes, duration, fps)
-            st.success("Video created.")
-            st.video(output)
-            with open(output, "rb") as f:
-                st.download_button("⬇️ Download MP4", f, file_name="ai_video.mp4", mime="video/mp4")
+HF_TOKEN = st.secrets["HF_TOKEN"]
 
-with tab2:
-    photo = st.file_uploader("Upload a photo", type=["png","jpg","jpeg"])
-    prompt = st.text_area("Motion prompt", placeholder="Slow camera push-in, natural movement...")
-    if st.button("🖼️ Create Photo Video"):
-        if not photo:
-            st.error("Upload a photo first.")
-        else:
-            st.info("Photo-to-video requires a connected video model/API. The upload UI is ready; connect your chosen model in video/photo_to_video.py.")
+client = InferenceClient(
+    provider="auto",
+    api_key=HF_TOKEN,
+)
+
+st.subheader("📝 Script")
+
+script = st.text_area(
+    "Apni story/script likho:",
+    height=220,
+    placeholder="Example: Ek ladka subah apne shehar ki sadak par chal raha hai..."
+)
+
+duration = st.slider(
+    "Video duration (per generated clip)",
+    min_value=2,
+    max_value=10,
+    value=4
+)
+
+style = st.selectbox(
+    "Video style",
+    [
+        "Cinematic realistic",
+        "3D animation",
+        "Anime",
+        "Cartoon"
+    ]
+)
+
+if st.button("🚀 Generate AI Video", use_container_width=True):
+
+    if not script.strip():
+        st.warning("Pehle script likho.")
+        st.stop()
+
+    prompt = f"""
+Create a {style} video based on this story:
+
+{script}
+
+Show the main character clearly.
+Natural human movement.
+Cinematic camera movement.
+Consistent character appearance.
+Detailed environment.
+High quality.
+"""
+
+    st.info("AI video generate ho raha hai... thoda time lagega.")
+
+    try:
+        video_bytes = client.text_to_video(
+            prompt,
+            model="Wan-AI/Wan2.1-T2V-1.3B",
+            num_frames=int(duration * 16),
+        )
+
+        output_path = os.path.join(
+            tempfile.gettempdir(),
+            "ai_generated_video.mp4"
+        )
+
+        with open(output_path, "wb") as f:
+            f.write(video_bytes)
+
+        st.success("✅ Video ready!")
+
+        st.video(output_path)
+
+        with open(output_path, "rb") as f:
+            st.download_button(
+                "⬇️ Download Video",
+                f,
+                file_name="my_ai_video.mp4",
+                mime="video/mp4"
+            )
+
+    except Exception as e:
+        st.error("Video generation failed.")
+        st.code(str(e))
+        st.info(
+            "Check karo ki HF token me Inference Providers permission hai "
+            "aur account me provider inference available hai."
+        )
